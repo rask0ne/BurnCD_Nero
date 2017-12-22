@@ -1,6 +1,6 @@
-﻿
-using System;
+﻿using System;
 using System.IO;
+using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Windows.Forms;
@@ -8,13 +8,9 @@ using IMAPI2.Interop;
 
 namespace IMAPI2.MediaItem
 {
-    /// <summary>
-    /// 
-    /// </summary>
+
     class FileItem : IMediaItem
     {
-        private const Int64 SECTOR_SIZE = 2048;
-
         private Int64 m_fileLength = 0;
 
         public FileItem(string path)
@@ -25,6 +21,7 @@ namespace IMAPI2.MediaItem
             }
 
             filePath = path;
+
 
             FileInfo fileInfo = new FileInfo(filePath);
             displayName = fileInfo.Name;
@@ -55,25 +52,37 @@ namespace IMAPI2.MediaItem
             }
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
         public Int64 SizeOnDisc
         {
             get
             {
-                if (m_fileLength > 0)
-                {
-                    return ((m_fileLength / SECTOR_SIZE) + 1) * SECTOR_SIZE;
-                }
+                ulong cluster = 0;
+                string fileName = Path;
+                string driveLetter = System.IO.Path
+                    .GetPathRoot(fileName)
+                    .TrimEnd('\\');
 
-                return 0;
+                string queryString = string.Format("SELECT BlockSize, NumberOfBlocks " +
+                                                   "  FROM Win32_Volume " +
+                                                   "  WHERE DriveLetter = '{0}'", driveLetter);
+
+                using (ManagementObjectSearcher searcher = new
+                    ManagementObjectSearcher(queryString))
+                {
+                    foreach (ManagementObject item in searcher.Get())
+                    {
+                        cluster = (ulong)item["BlockSize"];
+                        break;
+                    }
+                }
+                var clusterSize = Convert.ToInt64(cluster);
+                var size = m_fileLength;
+                long bytes = ((size + clusterSize - 1) / clusterSize) * clusterSize;
+
+                return bytes;
             }
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
         public string Path
         {
             get
@@ -83,9 +92,6 @@ namespace IMAPI2.MediaItem
         }
         private string filePath;
 
-        /// <summary>
-        /// 
-        /// </summary>
         public System.Drawing.Image FileIconImage
         {
             get
@@ -95,10 +101,6 @@ namespace IMAPI2.MediaItem
         }
         private System.Drawing.Image fileIconImage = null;
 
-
-        /// <summary>
-        /// 
-        /// </summary>
         public override string ToString()
         {
             return displayName;
